@@ -1,0 +1,1 @@
+{"name":"三星计算器","short_name":"三星计算器","description":"免费、无广告的离线流水计算器","start_url":"./index.html","scope":"./","display":"standalone","background_color":"#202020","theme_color":"#202020","orientation":"portrait","icons":[{"src":"./icons/icon-180.png","sizes":"180x180","type":"image/png"},{"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png"}]}
