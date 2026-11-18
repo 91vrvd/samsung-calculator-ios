@@ -1,6 +1,7 @@
 :root{--accent:#44dda2;--dark:#202020;--number:#d5d5d5;--line:#737373;--font-multiplier:1}
 *{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 body{background:var(--dark);touch-action:manipulation}
 button{font:inherit;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -51,15 +52,20 @@ button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .app.samsung .ledger-row .row-date{font-size:11px}
 .app.samsung .entry-panel{order:3;flex:0 0 auto;min-height:76px;margin-bottom:0;padding-left:23px;padding-right:23px;padding-bottom:12px}
 .app.samsung .collapse-button{display:none}
-.app.samsung .entry{color:#333;font-size:calc(37px * var(--font-multiplier));max-width:100%;width:100%}
-.app.samsung #entryText{-webkit-user-select:text;user-select:text}
+.app.samsung .entry{color:#333;font-size:calc(37px * var(--font-multiplier));max-width:100%;width:100%;cursor:text;transition:font-size .12s ease}
+.app.samsung .entry.long-entry{font-size:calc(30px * var(--font-multiplier))}
+.app.samsung .entry.very-long-entry{font-size:calc(25px * var(--font-multiplier))}
+.app.samsung .entry.ultra-long-entry{font-size:calc(21px * var(--font-multiplier))}
+.app.samsung #entryText{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;display:inline-flex;align-items:baseline;justify-content:flex-end;min-height:45px;min-width:100%;padding-right:2px}
+.app.samsung #entryText .expr-char,.app.samsung #entryText .expr-sep{display:inline-block}
+.app.samsung #entryText .entry-caret{display:inline-block;width:2px;height:1.02em;background:#078c5b;align-self:center;margin:0 -1px;animation:caret 1s steps(1) infinite;pointer-events:none;flex:0 0 auto}
+.app.samsung.samsung-dark #entryText .entry-caret{background:#21ba72}
 .app.samsung.history-view .ledger-row{cursor:pointer}
-.app.samsung #entryText{min-height:45px;min-width:0;border-right:2px solid #078c5b;padding-right:2px;animation:caret 1s steps(1) infinite}
 .app.samsung #entryText .operator{color:#0b9962}
 .app.samsung .entry.completed #entryText{color:#0b9962}
 .samsung-preview{display:none}
 .app.samsung .samsung-preview{display:block;order:2;flex:0 0 auto;position:static;min-height:31px;padding:0 24px 3px;color:#8b8b8b;font-size:calc(22px * var(--font-multiplier));font-weight:300;text-align:right;max-width:100%;overflow-wrap:anywhere}
-@keyframes caret{50%{border-color:transparent}}
+@keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
 .app.samsung .keyboard,.app.samsung .archive-bar{display:none!important}
 .app.samsung .samsung-keyboard{height:54dvh;min-height:320px;max-height:590px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(5,minmax(0,1fr));gap:7px 9px;padding:6px 16px calc(9px + env(safe-area-inset-bottom));background:#f6f6f6}
 .skey{border-radius:999px;background:#fff;color:#303136;font-size:calc(35px * var(--font-multiplier));font-weight:300;width:min(17.5vw,70px);height:min(17.5vw,70px);min-width:0;min-height:0;padding:0;display:flex;align-items:center;justify-content:center;justify-self:center;align-self:center;transition:transform .075s ease-out,background-color .075s ease-out,color .075s ease-out,box-shadow .075s ease-out;touch-action:manipulation}

@@ -229,6 +229,14 @@ if (!samsungExpression && (entry.left || entry.op || entry.right)) {
   samsungExpression = `${entry.left || '0'}${entry.op}${entry.right}`;
   samsungCompleted = !!entry.completed;
 }
+let samsungCursor = samsungExpression.length;
+function clampSamsungCursor() {
+  samsungCursor = Math.max(0, Math.min(samsungCursor, samsungExpression.length));
+}
+function setSamsungExpression(value, cursor = value.length) {
+  samsungExpression = value;
+  samsungCursor = Math.max(0, Math.min(cursor, samsungExpression.length));
+}
 let samsungHistory = false;
 let collapsed = false;
 let selectedId = null;
@@ -399,13 +407,19 @@ function renderRows() {
     let longOpened = false;
     item.addEventListener('pointerdown', () => {
       longOpened = false;
-      longTimer = setTimeout(() => { longOpened = true; selectedId = row.id; renderRows(); openRowActions(row.id); }, 450);
+      longTimer = setTimeout(() => {
+        longOpened = true;
+        window.getSelection?.()?.removeAllRanges?.();
+        selectedId = row.id;
+        renderRows();
+        openRowActions(row.id);
+      }, 450);
     });
     for (const eventName of ['pointerup', 'pointercancel', 'pointerleave']) item.addEventListener(eventName, () => clearTimeout(longTimer));
     item.addEventListener('click', () => {
       if (longOpened) return;
       if (isSamsungTheme() && samsungHistory && row.result !== undefined) {
-        samsungExpression = row.result;
+        setSamsungExpression(row.result);
         samsungCompleted = false;
         samsungHistory = false;
         selectedId = null;
@@ -436,36 +450,116 @@ function renderRows() {
   });
 }
 
-function renderEntry() {
+function appendCaret(container) {
+  const caret = document.createElement('span');
+  caret.className = 'entry-caret';
+  container.append(caret);
+  return caret;
+}
+
+function renderSamsungExpressionTokens(content, text, cursor) {
+  const grouping = !!state.settings.grouping;
+  let i = 0;
+  let caretEl = null;
+  while (i < text.length) {
+    const rest = text.slice(i);
+    const numMatch = /^(?:\d+(?:\.\d*)?|\.\d+)/.exec(rest);
+    if (numMatch) {
+      const token = numMatch[0];
+      const dotIndex = token.indexOf('.');
+      const intLen = dotIndex === -1 ? token.length : dotIndex;
+      for (let j = 0; j < token.length; j += 1) {
+        const pos = i + j;
+        if (cursor !== null && pos === cursor) caretEl = appendCaret(content);
+        if (grouping && j > 0 && j < intLen && (intLen - j) % 3 === 0) {
+          const sep = document.createElement('span');
+          sep.className = 'expr-sep';
+          sep.dataset.pos = String(pos);
+          sep.textContent = ',';
+          content.append(sep);
+        }
+        const span = document.createElement('span');
+        span.className = 'expr-char';
+        span.dataset.pos = String(pos);
+        span.textContent = token[j];
+        content.append(span);
+      }
+      i += token.length;
+    } else {
+      const ch = text[i];
+      if (cursor !== null && i === cursor) caretEl = appendCaret(content);
+      const span = document.createElement('span');
+      span.className = /[+−×÷%]/.test(ch) ? 'expr-char operator' : 'expr-char';
+      span.dataset.pos = String(i);
+      span.textContent = ch;
+      content.append(span);
+      i += 1;
+    }
+  }
+  if (cursor !== null && cursor >= text.length) caretEl = appendCaret(content);
+  return caretEl;
+}
+
+function computeSamsungPreview(rawExpr) {
+  if (!rawExpr) return '';
+  let candidate = String(rawExpr).replace(/[+−×÷.(]+$/, '');
+  if (!candidate || !/[\d)%]$/.test(candidate)) return '';
+  if (!/[+−×÷%]/.test(candidate) || /^[−-]\d+(?:\.\d*)?$/.test(candidate)) return '';
+  const openCount = [...candidate].filter(ch => ch === '(').length;
+  const closeCount = [...candidate].filter(ch => ch === ')').length;
+  if (openCount > closeCount) candidate += ')'.repeat(openCount - closeCount);
+  try {
+    return `${formattedResult(evaluateExpression(candidate, samsungDigits()))}${unitSuffix()}`;
+  } catch {
+    return '';
+  }
+}
+
+function renderEntry(preserveScroll = false) {
   const samsung = advancedTheme();
   let text = samsung ? samsungExpression : entry.left || '0';
   if (!samsung && entry.op) text = `${entry.left || '0'}${entry.op}${entry.right}`;
   else if (!samsung && entry.left) text = displayNumber(entry.left);
   const content = $('entryText');
+  let caretEl = null;
   if (samsung) {
+    clampSamsungCursor();
     content.replaceChildren();
-    if (samsungCompleted) content.textContent = `${formattedResult(text)}${unitSuffix()}`;
-    else {
-      for (const token of text.match(/\d+(?:\.\d*)?|\.\d+|[+−×÷()%]/g) || []) {
-        const span = document.createElement('span');
-        span.textContent = /^\d|^\./.test(token) ? formattedResult(token.startsWith('.') ? `0${token}` : token) : token;
-        if (/[+−×÷%]/.test(token)) span.className = 'operator';
-        content.append(span);
+    if (samsungCompleted) {
+      const normalizedText = text.startsWith('-') ? `−${text.slice(1)}` : text;
+      renderSamsungExpressionTokens(content, normalizedText, null);
+      const suffix = unitSuffix();
+      if (suffix) {
+        const unitSpan = document.createElement('span');
+        unitSpan.className = 'expr-unit';
+        unitSpan.textContent = suffix;
+        content.append(unitSpan);
       }
+    } else {
+      caretEl = renderSamsungExpressionTokens(content, text, samsungCursor);
     }
-    let preview = '';
-    if (!samsungCompleted && /[\d)%]$/.test(samsungExpression) && /[\d)%][+−×÷]/.test(samsungExpression)) {
-      try { preview = `${formattedResult(evaluateExpression(samsungExpression, samsungDigits()))}${unitSuffix()}`; } catch { /* unfinished expression */ }
-    }
+    const preview = samsungCompleted ? '' : computeSamsungPreview(samsungExpression);
     $('samsungPreview').textContent = preview;
     $('samsungPreview').hidden = !preview;
   } else {
     content.textContent = text;
     $('samsungPreview').hidden = true;
   }
+  const displayLen = samsung ? samsungExpressionText(text).length : text.length;
   $('entry').classList.toggle('empty', samsung && !text);
   $('entry').classList.toggle('completed', samsung && samsungCompleted);
-  requestAnimationFrame(() => { $('entry').scrollLeft = $('entry').scrollWidth; });
+  $('entry').classList.toggle('long-entry', samsung && displayLen > 12 && displayLen <= 17);
+  $('entry').classList.toggle('very-long-entry', samsung && displayLen > 17 && displayLen <= 23);
+  $('entry').classList.toggle('ultra-long-entry', samsung && displayLen > 23);
+  if (!preserveScroll) {
+    requestAnimationFrame(() => {
+      if (caretEl && samsungCursor < samsungExpression.length) {
+        caretEl.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      } else {
+        $('entry').scrollLeft = $('entry').scrollWidth;
+      }
+    });
+  }
 }
 
 function render() {
@@ -627,51 +721,101 @@ function pressSamsungKey(key) {
   const wasInHistory = samsungHistory;
   const oldRowCount = state.rows.length;
   if (samsungHistory) samsungHistory = false;
-  if (key === 'C') { samsungExpression = ''; samsungCompleted = false; }
-  else if (key === 'back') { samsungExpression = samsungExpression.slice(0, -1); samsungCompleted = false; }
-  else if (/^[0-9.]$/.test(key)) {
-    if (samsungCompleted) samsungExpression = '';
+  clampSamsungCursor();
+  const insertAtCursor = text => {
+    samsungExpression = samsungExpression.slice(0, samsungCursor) + text + samsungExpression.slice(samsungCursor);
+    samsungCursor += text.length;
+  };
+  if (key === 'C') { setSamsungExpression('', 0); samsungCompleted = false; }
+  else if (key === 'back') {
+    if (samsungCompleted) {
+      setSamsungExpression(samsungExpression.slice(0, -1));
+      samsungCompleted = false;
+    } else if (samsungCursor > 0) {
+      samsungExpression = samsungExpression.slice(0, samsungCursor - 1) + samsungExpression.slice(samsungCursor);
+      samsungCursor -= 1;
+      samsungCompleted = false;
+    }
+  } else if (/^[0-9.]$/.test(key)) {
+    if (samsungCompleted) setSamsungExpression('', 0);
     samsungCompleted = false;
     if (samsungExpression.replace(/\D/g, '').length >= 64) { toast('最多输入 64 位数字'); return; }
-    const segment = samsungExpression.split(/[+−×÷()%]/).pop();
-    if (key === '.' && segment.includes('.')) return;
-    if (/[)%]$/.test(samsungExpression)) samsungExpression += '×';
-    if (key === '.' && !segment) samsungExpression += '0';
-    samsungExpression += key;
+    const before = samsungExpression.slice(0, samsungCursor);
+    const after = samsungExpression.slice(samsungCursor);
+    const leftSeg = before.split(/[+−×÷()%]/).pop() || '';
+    const rightSeg = after.split(/[+−×÷()%]/)[0] || '';
+    if (key === '.' && (leftSeg.includes('.') || rightSeg.includes('.'))) return;
+    if (key !== '.' && leftSeg === '0' && !rightSeg) {
+      samsungExpression = before.slice(0, -1) + key + after;
+    } else {
+      let chunk = '';
+      if (/[)%]$/.test(before)) chunk += '×';
+      if (key === '.' && !leftSeg) chunk += '0';
+      chunk += key;
+      insertAtCursor(chunk);
+    }
   } else if (key === '()' || key === '(' || key === ')') {
-    if (samsungCompleted) samsungExpression = '';
-    const open = [...samsungExpression].filter(char => char === '(').length;
-    const close = [...samsungExpression].filter(char => char === ')').length;
-    const previous = samsungExpression.slice(-1);
+    if (samsungCompleted) setSamsungExpression('', 0);
+    const before = samsungExpression.slice(0, samsungCursor);
+    const open = [...before].filter(char => char === '(').length;
+    const close = [...before].filter(char => char === ')').length;
+    const previous = before.slice(-1);
     const shouldClose = key === ')' || (key === '()' && open > close && /[\d)%]/.test(previous));
     if (shouldClose) {
-      if (open > close && /[\d)%]/.test(previous)) samsungExpression += ')';
-    } else samsungExpression += /[\d)%]/.test(previous) ? '×(' : '(';
+      if (open > close && /[\d)%]/.test(previous)) insertAtCursor(')');
+    } else {
+      insertAtCursor(/[\d)%]/.test(previous) ? '×(' : '(');
+    }
     samsungCompleted = false;
   } else if (key === 'sign') {
-    const wrappedNegative = /\(−(\d+(?:\.\d*)?)\)$/.exec(samsungExpression);
-    const match = /\d+(?:\.\d*)?$/.exec(samsungExpression);
     if (samsungCompleted && /^-?\d/.test(samsungExpression)) {
-      samsungExpression = calculate('0', '-', samsungExpression, samsungDigits());
+      const next = calculate('0', '-', samsungExpression, samsungDigits());
+      setSamsungExpression(next);
       samsungCompleted = true;
-    } else if (wrappedNegative) {
-      samsungExpression = samsungExpression.slice(0, wrappedNegative.index) + wrappedNegative[1];
-    } else if (match) {
-      const start = match.index;
-      const before = samsungExpression.slice(0, start);
-      samsungExpression = `${before}(−${match[0]})`;
+    } else {
+      const before = samsungExpression.slice(0, samsungCursor);
+      const after = samsungExpression.slice(samsungCursor);
+      const wrappedNegative = /\(−(\d+(?:\.\d*)?)\)$/.exec(before);
+      const match = /\d+(?:\.\d*)?$/.exec(before);
+      if (wrappedNegative) {
+        const replaced = before.slice(0, wrappedNegative.index) + wrappedNegative[1];
+        samsungExpression = replaced + after;
+        samsungCursor = replaced.length;
+      } else if (match) {
+        const start = match.index;
+        const replaced = `${before.slice(0, start)}(−${match[0]})`;
+        samsungExpression = replaced + after;
+        samsungCursor = replaced.length;
+      }
     }
   } else if (key === '%') {
-    if (/[\d)]$/.test(samsungExpression)) samsungExpression += '%';
+    const before = samsungExpression.slice(0, samsungCursor);
+    if (/[\d)]$/.test(before)) insertAtCursor('%');
     samsungCompleted = false;
   } else if (['+', '−', '×', '÷'].includes(key)) {
-    samsungExpression = appendExpressionOperator(samsungExpression, key);
+    if (samsungCompleted || samsungCursor === samsungExpression.length) {
+      setSamsungExpression(appendExpressionOperator(samsungExpression, key));
+    } else {
+      const before = samsungExpression.slice(0, samsungCursor);
+      const after = samsungExpression.slice(samsungCursor);
+      const ops = /^[+−×÷]$/;
+      if (ops.test(before.slice(-1))) {
+        samsungExpression = before.slice(0, -1) + key + after;
+      } else if (ops.test(after.slice(0, 1))) {
+        samsungExpression = before + key + after.slice(1);
+        samsungCursor += 1;
+      } else if (/[\d)%]$/.test(before)) {
+        insertAtCursor(key);
+      } else if (key === '−' && (!before || /[(+−×÷]$/.test(before))) {
+        insertAtCursor(key);
+      }
+    }
     samsungCompleted = false;
   } else if (key === '=') {
     try {
       const result = evaluateExpression(samsungExpression, samsungDigits());
       state.rows.push({ id: freshId(), type: 'calc', expression: samsungExpression, result, at: Date.now() });
-      samsungExpression = result;
+      setSamsungExpression(result);
       samsungCompleted = true;
       selectedId = null;
       speakResult(result);
@@ -689,14 +833,17 @@ function pressSamsungRoot() {
     const value = evaluateExpression(original, samsungDigits());
     const result = squareRoot(value, samsungDigits());
     state.rows.push({ id: freshId(), type: 'calc', expression: `√(${original})`, result, at: Date.now() });
-    samsungExpression = result; samsungCompleted = true; selectedId = null;
+    setSamsungExpression(result); samsungCompleted = true; selectedId = null;
     speakResult(result);
     persist(); render();
   } catch (error) { toast(error.message); }
 }
 
 function convertSamsung() {
-  const source = samsungExpression || lastResult();
+  let source = samsungExpression || lastResult();
+  if (source && !/^-?\d+(?:\.\d*)?$/.test(source)) {
+    try { source = evaluateExpression(source, samsungDigits()); } catch { source = lastResult(); }
+  }
   if (/^-?\d+(?:\.\d*)?$/.test(source)) converterState.input = source.replace(/\.$/, '') || '0';
   $('converter').hidden = false;
   renderConverter();
@@ -1231,7 +1378,7 @@ function recentTrashBatch() {
 
 function confirmClear() {
   if (!state.rows.length) { toast('当前没有记录'); return; }
-  showSheet('清除历史记录？可在回收站恢复', [{ label: '清除历史记录', danger: true, run: () => { state.trash.unshift(...rowsForTrash(state.rows)); state.rows = []; entry = { left: '', op: '', right: '', completed: false }; samsungExpression = ''; samsungCompleted = false; samsungHistory = false; selectedId = null; persist(); render(); toast('已清空'); } }]);
+  showSheet('清除历史记录？可在回收站恢复', [{ label: '清除历史记录', danger: true, run: () => { state.trash.unshift(...rowsForTrash(state.rows)); state.rows = []; entry = { left: '', op: '', right: '', completed: false }; setSamsungExpression('', 0); samsungCompleted = false; samsungHistory = false; selectedId = null; persist(); render(); toast('已清空'); } }]);
 }
 
 function saveArchive() {
@@ -1247,7 +1394,7 @@ function listArchives() {
         state.archives.unshift({ id: freshId(), title: `自动备份 ${new Date().toLocaleString('zh-CN')}`, rows: structuredClone(state.rows), at: Date.now() });
       }
       state.rows = structuredClone(archive.rows);
-      selectedId = null; collapsed = false; samsungHistory = false; entry = { left: '', op: '', right: '', completed: false }; samsungExpression = '';
+      selectedId = null; collapsed = false; samsungHistory = false; entry = { left: '', op: '', right: '', completed: false }; setSamsungExpression('', 0); samsungCompleted = false;
       $('settings').hidden = true; persist(); render();
     } },
     { label: '复制内容', run: () => copyText(rowsText(archive.rows)) },
@@ -1415,6 +1562,60 @@ document.addEventListener('keydown', event => {
     if (advancedTheme()) pressSamsungKey(isSamsungTheme() && (key === '(' || key === ')') ? '()' : key);
     else pressKey(key);
   }
+});
+
+document.addEventListener('contextmenu', event => {
+  if (event.target.closest('input, textarea, .sheet-message')) return;
+  event.preventDefault();
+});
+document.addEventListener('selectstart', event => {
+  if (event.target.closest('input, textarea, .sheet-message')) return;
+  event.preventDefault();
+});
+function moveSamsungCursorToClientX(x) {
+  if (!advancedTheme()) return;
+  if (samsungCompleted) {
+    samsungCompleted = false;
+    if (samsungExpression.startsWith('-')) {
+      samsungExpression = `−${samsungExpression.slice(1)}`;
+    }
+  }
+  const chars = Array.from($('entryText').querySelectorAll('.expr-char'));
+  if (!chars.length) {
+    samsungCursor = 0;
+    renderEntry(true);
+    return;
+  }
+  let nextCursor = samsungExpression.length;
+  for (const el of chars) {
+    const rect = el.getBoundingClientRect();
+    const pos = Number(el.dataset.pos);
+    if (x < rect.left + rect.width / 2) {
+      nextCursor = pos;
+      break;
+    }
+    nextCursor = pos + 1;
+  }
+  samsungCursor = Math.max(0, Math.min(nextCursor, samsungExpression.length));
+  renderEntry(true);
+}
+
+let draggingEntryCursor = false;
+$('entry').addEventListener('pointerdown', event => {
+  if (!advancedTheme()) return;
+  if ($('entry').scrollWidth <= $('entry').clientWidth + 4) {
+    draggingEntryCursor = true;
+    moveSamsungCursorToClientX(event.clientX);
+  }
+});
+$('entry').addEventListener('pointermove', event => {
+  if (draggingEntryCursor && event.buttons) moveSamsungCursorToClientX(event.clientX);
+});
+for (const name of ['pointerup', 'pointercancel', 'pointerleave']) {
+  $('entry').addEventListener(name, () => { draggingEntryCursor = false; });
+}
+$('entry').addEventListener('click', event => {
+  moveSamsungCursorToClientX(event.clientX);
 });
 
 appearance?.addEventListener?.('change', () => render());

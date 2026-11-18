@@ -77,6 +77,7 @@ struct CalculatorView: UIViewRepresentable {
         view.scrollView.isScrollEnabled = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.allowsBackForwardNavigationGestures = false
+        view.allowsLinkPreview = false
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Web") {
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
